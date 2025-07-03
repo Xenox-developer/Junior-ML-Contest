@@ -1,4 +1,5 @@
-# Docker Setup для AI Study MVP
+# Docker Setup для AI Study
+## Сервис доступен по ссылке http://нотэ.рф/
 
 ## 🚀 Быстрый старт
 
