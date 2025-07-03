@@ -1,5 +1,3 @@
-# Makefile для AI Study MVP
-
 .PHONY: help build run stop logs shell clean test lint
 
 # Цвета для вывода

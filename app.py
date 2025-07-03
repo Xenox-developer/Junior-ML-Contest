@@ -12,10 +12,10 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-i
 app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_UPLOAD_MB', 200)) * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
-# Ensure upload folder exists
+# Убедитесь, что папка для загрузки существует
 Path(app.config['UPLOAD_FOLDER']).mkdir(exist_ok=True)
 
-# Configure logging
+# Настройка ведения журнала логов
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -26,18 +26,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Allowed extensions
+# Допустимые форматы файла
 ALLOWED_EXTENSIONS = {'pdf', 'mp4', 'mov', 'mkv'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def init_db():
-    """Initialize SQLite database with advanced schema"""
+    """Инициализация БД SQLite"""
     conn = sqlite3.connect('ai_study.db')
     c = conn.cursor()
     
-    # Main results table
+    # Таблица с результатом
     c.execute('''
         CREATE TABLE IF NOT EXISTS result (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +55,7 @@ def init_db():
         )
     ''')
     
-    # User progress tracking
+    # Таблица прогресса пользователя
     c.execute('''
         CREATE TABLE IF NOT EXISTS user_progress (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,11 +73,11 @@ def init_db():
     conn.close()
 
 def save_result(filename, file_type, analysis_result):
-    """Save advanced processing result to database"""
+    """Сохранение результата в БД"""
     conn = sqlite3.connect('ai_study.db')
     c = conn.cursor()
     
-    # Serialize complex data structures
+    # Сериализовываем данные
     topics_json = json.dumps(analysis_result['topics_data'], ensure_ascii=False)
     flashcards_json = json.dumps(analysis_result['flashcards'], ensure_ascii=False)
     mind_map_json = json.dumps(analysis_result.get('mind_map', {}), ensure_ascii=False)
@@ -106,7 +106,7 @@ def save_result(filename, file_type, analysis_result):
     return result_id
 
 def get_result(result_id):
-    """Retrieve advanced result from database"""
+    """Получение результата из базы данных"""
     conn = sqlite3.connect('ai_study.db')
     c = conn.cursor()
     
@@ -138,31 +138,31 @@ def get_result(result_id):
 
 @app.route('/')
 def index():
-    """Main page with upload form"""
+    """Главная страница"""
     return render_template('index.html')
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    """Handle file upload and processing"""
+    """Загрузка и обработка файла"""
     try:
-        # Check if file was uploaded
+        # Проверка загружен ли файл
         if 'file' not in request.files:
             flash('Выберите файл', 'danger')
             return redirect(url_for('index'))
         
         file = request.files['file']
         
-        # Check if file is empty
+        # Проверка пустой ли файл
         if file.filename == '':
             flash('Выберите файл', 'danger')
             return redirect(url_for('index'))
         
-        # Check file type
+        # Проверка формата файла
         if not allowed_file(file.filename):
             flash('Формат не поддерживается. Используйте PDF, MP4, MOV или MKV', 'danger')
             return redirect(url_for('index'))
         
-        # Save file
+        # Сохранение файла
         filename = secure_filename(file.filename)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"{timestamp}_{filename}"
@@ -171,16 +171,16 @@ def upload_file():
         
         logger.info(f"File uploaded: {filename}")
         
-        # Process file with advanced ML
+        # Обработка файла
         try:
             from ml import process_file
             analysis_result = process_file(filepath, filename)
             
-            # Save result to database
+            # Сохранение результата в БД
             file_type = Path(filename).suffix.lower()
             result_id = save_result(filename, file_type, analysis_result)
             
-            # Clean up file after processing
+            # Удаление файла
             os.remove(filepath)
             
             logger.info(f"Advanced processing completed for: {filename}")
@@ -189,7 +189,7 @@ def upload_file():
             
         except Exception as e:
             logger.error(f"Error processing file {filename}: {str(e)}")
-            # Clean up file on error
+            # Удаление файла с ошибкой
             if os.path.exists(filepath):
                 os.remove(filepath)
             flash('Ошибка обработки, попробуйте ещё раз', 'danger')
@@ -202,7 +202,7 @@ def upload_file():
 
 @app.route('/result/<int:result_id>')
 def result(result_id):
-    """Display advanced processing results"""
+    """Отображение результата"""
     data = get_result(result_id)
     if not data:
         flash('Результат не найден', 'danger')
@@ -212,7 +212,7 @@ def result(result_id):
 
 @app.route('/api/flashcard_progress', methods=['POST'])
 def update_flashcard_progress():
-    """Update flashcard review progress (for spaced repetition)"""
+    """Обновление прогресса изучения флеш-карт"""
     try:
         data = request.json
         result_id = data.get('result_id')
@@ -222,7 +222,7 @@ def update_flashcard_progress():
         conn = sqlite3.connect('ai_study.db')
         c = conn.cursor()
         
-        # Check if progress exists
+        # Проверка существования прогресса
         c.execute('''
             SELECT id, ease_factor, consecutive_correct 
             FROM user_progress 
@@ -232,16 +232,16 @@ def update_flashcard_progress():
         progress = c.fetchone()
         
         if progress:
-            # Update existing progress
+            # Обновление существующего прогресса
             prog_id, ease_factor, consecutive = progress
             
             if correct:
-                # Increase ease factor and consecutive count
+                # Повышение сложности при правильном ответе
                 new_ease = min(2.5, ease_factor + 0.1)
                 new_consecutive = consecutive + 1
                 interval_days = int(new_consecutive * new_ease)
             else:
-                # Reset on incorrect answer
+                # Понижение сложности при неправильном ответе
                 new_ease = max(1.3, ease_factor - 0.2)
                 new_consecutive = 0
                 interval_days = 1
@@ -255,7 +255,7 @@ def update_flashcard_progress():
                 WHERE id = ?
             ''', (interval_days, new_ease, new_consecutive, prog_id))
         else:
-            # Create new progress entry
+            # Создание новой истории прогресса
             interval_days = 1 if not correct else 3
             c.execute('''
                 INSERT INTO user_progress 
@@ -274,13 +274,12 @@ def update_flashcard_progress():
 
 @app.route('/download/<int:result_id>')
 def download_flashcards(result_id):
-    """Download flashcards as JSON with Anki-compatible format"""
+    """Сохранение флеш-карт как JSON"""
     data = get_result(result_id)
     if not data:
         flash('Результат не найден', 'danger')
         return redirect(url_for('index'))
     
-    # Create Anki-compatible format
     anki_cards = []
     for i, card in enumerate(data['flashcards']):
         anki_card = {
@@ -295,7 +294,7 @@ def download_flashcards(result_id):
         }
         anki_cards.append(anki_card)
     
-    # Add metadata
+    # Метадата
     export_data = {
         "deck_name": f"AI_Study_{data['filename']}",
         "created": datetime.now().isoformat(),
@@ -305,17 +304,15 @@ def download_flashcards(result_id):
         "mind_map": data.get('mind_map', {})
     }
     
-    # Create JSON file
+    # Создание JSON файла
     json_content = json.dumps(export_data, ensure_ascii=False, indent=2)
     
-    # Save to temporary file
     temp_filename = f"ai_study_export_{result_id}.json"
     temp_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_filename)
     
     with open(temp_path, 'w', encoding='utf-8') as f:
         f.write(json_content)
     
-    # Send file and clean up
     def remove_file(response):
         try:
             os.remove(temp_path)
@@ -332,7 +329,7 @@ def download_flashcards(result_id):
 
 @app.route('/api/mind_map/<int:result_id>')
 def get_mind_map_data(result_id):
-    """Get mind map data for visualization"""
+    """Получение Mind Map"""
     data = get_result(result_id)
     if not data:
         return jsonify({"error": "Not found"}), 404
@@ -341,12 +338,12 @@ def get_mind_map_data(result_id):
 
 @app.route('/api/study_progress/<int:result_id>')
 def get_study_progress(result_id):
-    """Get user's study progress"""
+    """Получение прогресса пользователя"""
     try:
         conn = sqlite3.connect('ai_study.db')
         c = conn.cursor()
         
-        # Get flashcard progress
+        # Получение прогресса флеш-карт
         c.execute('''
             SELECT flashcard_id, last_review, next_review, 
                    ease_factor, consecutive_correct
@@ -364,7 +361,7 @@ def get_study_progress(result_id):
                 "consecutive_correct": row[4]
             })
         
-        # Calculate overall progress
+        # Подсчет прогресса
         total_cards = len(get_result(result_id)['flashcards'])
         reviewed_cards = len(progress_data)
         mastered_cards = sum(1 for p in progress_data if p['consecutive_correct'] >= 3)
@@ -385,7 +382,7 @@ def get_study_progress(result_id):
 
 @app.errorhandler(413)
 def request_entity_too_large(e):
-    """Handle file size limit exceeded"""
+    """Превышен максимальный размер файла"""
     max_mb = app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)
     flash(f'Размер файла превышает лимит в {max_mb} МБ', 'danger')
     return redirect(url_for('index'))

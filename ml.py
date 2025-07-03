@@ -8,17 +8,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
-# Load environment variables
+# Загрузка переменных среды разработки
 load_dotenv()
 
-# PDF processing
+# Обработка PDF
 from pdfminer.high_level import extract_text
 
-# Video/Audio processing
+# Обработка видео/аудио
 import whisperx
 import torch
 
-# NLP and embeddings
+# NLP
 from sentence_transformers import SentenceTransformer
 from sklearn.cluster import HDBSCAN
 from sklearn.preprocessing import normalize
@@ -26,43 +26,41 @@ import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 from collections import Counter
 
-# OpenAI for summarization and flashcards
 from openai import OpenAI
 
-# Download NLTK data if needed
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('punkt')
 
-# Configure logging
+# Логгирование
 logger = logging.getLogger(__name__)
 
-# Initialize models
+# Инициализация моделей
 device = "cuda" if torch.cuda.is_available() else "cpu"
 compute_type = "float16" if device == "cuda" else "int8"
 
-# Global variables for models
+# Глобальные переменные для моделей
 sentence_model = None
 whisper_model = None
 openai_client = None
 
 def load_models():
-    """Load AI models"""
+    """Загрузка моделей"""
     global sentence_model, whisper_model, openai_client
     
     logger.info("Loading models...")
     
-    # Sentence transformer for embeddings
+    # Sentence transformer
     sentence_model = SentenceTransformer("intfloat/e5-large-v2", device=device)
     
-    # Whisper for audio transcription
+    # Whisper для обработки аудио
     try:
         whisper_model = whisperx.load_model("large-v3", device, compute_type=compute_type)
     except Exception as e:
         logger.warning(f"Whisper model not loaded: {str(e)}")
     
-    # OpenAI client
+    # OpenAI клиент
     api_key = os.environ.get('OPENAI_API_KEY')
     if not api_key:
         raise ValueError("OPENAI_API_KEY environment variable not set")
@@ -70,14 +68,13 @@ def load_models():
     
     logger.info("Models loaded successfully")
 
-# Load models on module import
 try:
     load_models()
 except Exception as e:
     logger.warning(f"Models not loaded on import: {str(e)}")
 
 def extract_text_from_pdf(filepath: str) -> str:
-    """Extract text from PDF file"""
+    """Извлечение текста из PDF"""
     try:
         text = extract_text(filepath)
         return text.strip()
@@ -86,17 +83,17 @@ def extract_text_from_pdf(filepath: str) -> str:
         raise
 
 def transcribe_video_with_timestamps(filepath: str) -> Dict[str, Any]:
-    """Transcribe video/audio with timestamps using Whisper"""
+    """Транскрипция видео/аудио"""
     try:
         logger.info(f"Transcribing video with timestamps: {filepath}")
         
-        # Load audio
+        # Загрузка аудио
         audio = whisperx.load_audio(filepath)
         
-        # Transcribe with timestamps
+        # Транскрипция с временными отметками
         result = whisper_model.transcribe(audio, batch_size=16)
         
-        # Process segments
+        # Сегменты процесса
         segments = []
         key_moments = []
         full_text = ""
@@ -108,7 +105,7 @@ def transcribe_video_with_timestamps(filepath: str) -> Dict[str, Any]:
             
             full_text += text + " "
             
-            # Analyze segment importance (based on length and keywords)
+            # Анализ важности сегмента (на основе длины и ключевых слов)
             importance = min(1.0, len(text.split()) / 50)
             
             segments.append({
@@ -118,7 +115,7 @@ def transcribe_video_with_timestamps(filepath: str) -> Dict[str, Any]:
                 "importance": importance
             })
             
-            # Identify key moments (longer segments with high importance)
+            # Определение ключевых моментов (более длинных сегментов с высокой важностью)
             if importance > 0.7 and len(text.split()) > 20:
                 key_moments.append({
                     "time": start,
@@ -128,16 +125,15 @@ def transcribe_video_with_timestamps(filepath: str) -> Dict[str, Any]:
         return {
             "full_text": full_text.strip(),
             "segments": segments,
-            "key_moments": key_moments[:10]  # Top 10 key moments
+            "key_moments": key_moments[:10]  # Топ 10 ключевых моментов
         }
         
     except Exception as e:
         logger.error(f"Error transcribing video: {str(e)}")
-        # Fallback to simple transcription
         return {"full_text": transcribe_video_simple(filepath), "segments": [], "key_moments": []}
 
 def transcribe_video_simple(filepath: str) -> str:
-    """Simple video transcription without timestamps"""
+    """Транскрипция видео без временных меток"""
     try:
         audio = whisperx.load_audio(filepath)
         result = whisper_model.transcribe(audio, batch_size=16)
@@ -148,12 +144,12 @@ def transcribe_video_simple(filepath: str) -> str:
         raise
 
 def extract_topics_with_gpt(text: str) -> Dict[str, Any]:
-    """Extract topics using GPT-4 for better understanding"""
+    """Извлечение тематик с GPT"""
     try:
         if not openai_client:
             load_models()
         
-        # Limit text for API
+        # Лимит текста для API
         max_chars = 15000
         if len(text) > max_chars:
             text = text[:max_chars] + "..."
@@ -224,15 +220,14 @@ def extract_topics_with_gpt(text: str) -> Dict[str, Any]:
         return extract_topics_fallback(text)
 
 def extract_topics_fallback(text: str) -> Dict[str, Any]:
-    """Fallback method for topic extraction without GPT"""
+    """Извлечение тематик без GPT"""
     try:
-        # Split into paragraphs instead of sentences for better context
+        # Разбиваем на абзацы вместо предложений для лучшего понимания контекста
         paragraphs = [p.strip() for p in text.split('\n\n') if len(p.strip()) > 50]
         
         if len(paragraphs) < 3:
-            # If not enough paragraphs, split by sentences
+            # Если абзацев недостаточно, разбиваем их на предложения
             sentences = sent_tokenize(text)
-            # Group sentences into pseudo-paragraphs
             paragraphs = []
             for i in range(0, len(sentences), 3):
                 paragraph = " ".join(sentences[i:i+3])
@@ -255,11 +250,11 @@ def extract_topics_fallback(text: str) -> Dict[str, Any]:
                 "prerequisites": []
             }
         
-        # Generate embeddings for paragraphs
+        # Генерация эмбеддингов для параграфа
         embeddings = sentence_model.encode(paragraphs, convert_to_tensor=False)
         embeddings = normalize(embeddings)
         
-        # Hierarchical clustering
+        # Иерархическая кластеризация
         min_cluster_size = max(2, min(5, len(paragraphs) // 5))
         clusterer = HDBSCAN(
             min_cluster_size=min_cluster_size,
@@ -270,36 +265,36 @@ def extract_topics_fallback(text: str) -> Dict[str, Any]:
         
         cluster_labels = clusterer.fit_predict(embeddings)
         
-        # Extract topics from clusters
+        # Извлечение тематик из кластеров
         main_topics = []
         unique_labels = set(cluster_labels)
         
         for label in unique_labels:
-            if label == -1:  # Skip noise
+            if label == -1:
                 continue
             
-            # Get paragraphs in this cluster
+            # Получение абзацев в кластере
             cluster_paragraphs = [paragraphs[i] for i, l in enumerate(cluster_labels) if l == label]
             
             if not cluster_paragraphs:
                 continue
             
-            # Extract a meaningful title (not just first sentence)
+            # Извлекаем осмысленный заголовок (не только первое предложение).
             title = extract_topic_title(cluster_paragraphs)
             
-            # Create a proper summary
+            # Суммаризация
             summary = create_topic_summary(cluster_paragraphs)
             
-            # Extract key concepts
+            # Основные концепты
             key_concepts = extract_key_concepts(" ".join(cluster_paragraphs))
             
-            # Determine complexity
+            # Сложность
             complexity = determine_complexity(" ".join(cluster_paragraphs))
             
-            # Find examples
+            # Примеры
             examples = extract_meaningful_examples(cluster_paragraphs)
             
-            # Create topic
+            # Создание топика
             topic = {
                 "title": title,
                 "summary": summary,
@@ -312,13 +307,13 @@ def extract_topics_fallback(text: str) -> Dict[str, Any]:
             
             main_topics.append(topic)
         
-        # Sort by importance
+        # Сортировка по важности
         main_topics.sort(key=lambda x: len(x["summary"]), reverse=True)
         
-        # Extract relationships
+        # Извлечение взаимосвязи
         relationships = extract_smart_relationships(main_topics, text)
         
-        # Extract learning objectives
+        # Выделение тем обучения
         learning_objectives = extract_learning_objectives(main_topics)
         
         return {
@@ -346,10 +341,9 @@ def extract_topics_fallback(text: str) -> Dict[str, Any]:
         }
 
 def extract_topic_title(paragraphs: List[str]) -> str:
-    """Extract meaningful topic title from paragraphs"""
-    # Look for headers or strong statements
+    """Извлечение названий тематик из абзацев"""
+    # Ищем заголовки или утверждения
     for para in paragraphs:
-        # Check for section headers (usually short and at the beginning)
         lines = para.split('\n')
         for line in lines:
             if len(line) < 100 and (
@@ -358,17 +352,16 @@ def extract_topic_title(paragraphs: List[str]) -> str:
                 line.isupper() or
                 ':' in line[:50]
             ):
-                # Clean up the title
                 title = line.strip()
-                title = re.sub(r'^[§\d\s.]+', '', title)  # Remove section numbers
+                title = re.sub(r'^[§\d\s.]+', '', title)
                 title = title.strip(':').strip()
                 if len(title) > 10:
                     return title[:80]
     
-    # If no header found, extract key phrase
-    all_text = " ".join(paragraphs[:2])  # Use first two paragraphs
+    # Если заголовок не найдем, извлекаем фразу
+    all_text = " ".join(paragraphs[:2])
     
-    # Try to find the main concept
+    # Ищем ключевые концепты
     concept_patterns = [
         r'([А-Я][а-я]+(?:\s+[а-я]+){0,3})\s+(?:—|это|является|представляет)',
         r'(?:Рассмотрим|Изучим|Обсудим)\s+([а-я]+(?:\s+[а-я]+){0,3})',
@@ -382,9 +375,7 @@ def extract_topic_title(paragraphs: List[str]) -> str:
             if len(title) > 10:
                 return title.capitalize()
     
-    # Last resort - use most important noun phrases
     words = word_tokenize(all_text.lower())
-    # Find noun phrases (simplified)
     important_words = [w for w in words if len(w) > 4 and w.isalpha()]
     word_freq = Counter(important_words)
     
@@ -395,14 +386,12 @@ def extract_topic_title(paragraphs: List[str]) -> str:
     return "Тема раздела"
 
 def create_topic_summary(paragraphs: List[str]) -> str:
-    """Create meaningful summary from paragraphs"""
-    # Don't just concatenate - extract key ideas
+    """Резюмируем абзацы"""
     key_sentences = []
     
     for para in paragraphs:
         sentences = sent_tokenize(para)
         for sent in sentences:
-            # Look for definitional or explanatory sentences
             if any(marker in sent.lower() for marker in [
                 'это', 'является', 'представляет', 'означает',
                 'позволяет', 'используется', 'применяется',
@@ -413,7 +402,6 @@ def create_topic_summary(paragraphs: List[str]) -> str:
                     break
     
     if not key_sentences:
-        # Take first meaningful sentence
         for para in paragraphs:
             sentences = sent_tokenize(para)
             for sent in sentences:
@@ -423,22 +411,18 @@ def create_topic_summary(paragraphs: List[str]) -> str:
             if key_sentences:
                 break
     
-    # Combine and clean
     summary = " ".join(key_sentences[:2])
-    # Remove formulas and special characters
     summary = re.sub(r'\$[^$]+\$', '[формула]', summary)
     summary = re.sub(r'[^\w\s\[\].,!?;:()-]', '', summary)
     
     return summary[:300]
 
 def extract_subtopics_smart(paragraphs: List[str]) -> List[str]:
-    """Extract meaningful subtopics"""
+    """Извлекаем под-топики"""
     subtopics = []
     
     for para in paragraphs:
-        # Look for enumeration or listing
         if re.search(r'(?:включает|содержит|состоит из|различают|выделяют):', para, re.IGNORECASE):
-            # Extract items after colon
             parts = para.split(':')
             if len(parts) > 1:
                 items = re.split(r'[;,]', parts[1])
@@ -447,11 +431,9 @@ def extract_subtopics_smart(paragraphs: List[str]) -> List[str]:
                     if 10 < len(item) < 100:
                         subtopics.append(item)
         
-        # Look for numbered items
         numbered = re.findall(r'\d+\)\s*([^.]+)\.', para)
         subtopics.extend([item.strip() for item in numbered[:4] if 10 < len(item) < 100])
     
-    # Remove duplicates while preserving order
     seen = set()
     unique_subtopics = []
     for topic in subtopics:
@@ -462,48 +444,40 @@ def extract_subtopics_smart(paragraphs: List[str]) -> List[str]:
     return unique_subtopics[:5]
 
 def extract_meaningful_examples(paragraphs: List[str]) -> List[str]:
-    """Extract actual examples, not just random sentences"""
+    """Извлекаем примеры"""
     examples = []
     
     for para in paragraphs:
         sentences = sent_tokenize(para)
         for sent in sentences:
-            # Look for example indicators
             if any(indicator in sent.lower() for indicator in [
                 'например', 'к примеру', 'в частности', 'рассмотрим',
                 'пусть', 'допустим', 'представим', 'возьмем'
             ]):
-                # Clean up the example
                 example = sent.strip()
-                # Remove the indicator for cleaner text
                 for indicator in ['Например,', 'К примеру,', 'В частности,']:
                     example = example.replace(indicator, '').strip()
                 
                 if len(example) > 20:
                     examples.append(example)
             
-            # Look for concrete values or scenarios
             elif re.search(r'\d+\s*(?:%|процент|объект|элемент|класс)', sent) and len(sent) < 200:
                 examples.append(sent.strip())
     
     return examples[:5]
 
 def extract_smart_relationships(topics: List[Dict], text: str) -> List[Dict]:
-    """Extract meaningful relationships between topics"""
+    """Извлекаем связь между топиками"""
     relationships = []
     
-    # Create a mapping of topic keywords
     topic_keywords = {}
     for i, topic in enumerate(topics):
         keywords = set()
-        # Add words from title
         keywords.update(word_tokenize(topic['title'].lower()))
-        # Add key concepts
         for concept in topic['key_concepts']:
             keywords.update(word_tokenize(concept.lower()))
         topic_keywords[i] = keywords
     
-    # Look for relationships in text
     relationship_patterns = {
         'causes': ['приводит к', 'вызывает', 'влияет на', 'определяет'],
         'requires': ['требует', 'необходим', 'нужен для', 'основан на'],
@@ -512,7 +486,6 @@ def extract_smart_relationships(topics: List[Dict], text: str) -> List[Dict]:
         'similar': ['похож', 'аналогично', 'также как', 'подобно']
     }
     
-    # Analyze text for relationships
     sentences = sent_tokenize(text.lower())
     
     for i, topic1 in enumerate(topics):
@@ -520,13 +493,11 @@ def extract_smart_relationships(topics: List[Dict], text: str) -> List[Dict]:
             if i >= j:
                 continue
             
-            # Check if topics are mentioned together
             for sent in sentences:
                 t1_found = any(kw in sent for kw in topic_keywords[i])
                 t2_found = any(kw in sent for kw in topic_keywords[j])
                 
                 if t1_found and t2_found:
-                    # Check for relationship type
                     for rel_type, patterns in relationship_patterns.items():
                         if any(pattern in sent for pattern in patterns):
                             relationships.append({
@@ -537,23 +508,20 @@ def extract_smart_relationships(topics: List[Dict], text: str) -> List[Dict]:
                             })
                             break
                     
-                    # Only one relationship per pair
                     break
     
     return relationships[:10]
 
 def extract_learning_objectives(topics: List[Dict]) -> List[str]:
-    """Extract learning objectives from topics"""
+    """Извлекаем темы для изучения из топиков"""
     objectives = []
     
-    # Common objective patterns
     objective_verbs = [
         "Понимать", "Объяснять", "Применять", "Анализировать",
         "Различать", "Использовать", "Вычислять", "Определять"
     ]
     
-    for topic in topics[:5]:  # Top 5 topics
-        # Create objective based on topic
+    for topic in topics[:5]:
         verb = objective_verbs[len(objectives) % len(objective_verbs)]
         
         if topic['complexity'] == 'basic':
@@ -565,7 +533,6 @@ def extract_learning_objectives(topics: List[Dict]) -> List[str]:
         
         objectives.append(objective)
     
-    # Add general objectives
     objectives.extend([
         "Решать практические задачи по изученным темам",
         "Связывать теоретические концепции с практическим применением"
@@ -574,27 +541,22 @@ def extract_learning_objectives(topics: List[Dict]) -> List[str]:
     return objectives[:7]
 
 def extract_key_concepts(text: str) -> List[str]:
-    """Extract key concepts - improved version"""
+    """Извлекаем ключевые концепции"""
     concepts = []
     
-    # Look for defined terms
     defined_terms = re.findall(
         r'(?:([А-Я][а-я]+(?:\s+[а-я]+){0,2})\s*(?:—|это|называется|является))',
         text
     )
     concepts.extend([term.strip() for term in defined_terms if len(term) > 5])
     
-    # Look for terms in parentheses (often English terms or abbreviations)
     parenthetical = re.findall(r'\(([A-Za-z]+(?:\s+[A-Za-z]+){0,2})\)', text)
     concepts.extend([term for term in parenthetical if len(term) > 3])
     
-    # Look for emphasized terms
     emphasized = re.findall(r'«([^»]+)»', text)
     concepts.extend([term for term in emphasized if 5 < len(term) < 50])
     
-    # Frequency-based extraction with filtering
     words = word_tokenize(text.lower())
-    # Filter for meaningful words
     meaningful_words = [
         w for w in words 
         if len(w) > 4 and w.isalpha() and
@@ -603,10 +565,8 @@ def extract_key_concepts(text: str) -> List[str]:
     
     word_freq = Counter(meaningful_words)
     
-    # Add frequent terms
     for word, freq in word_freq.most_common(20):
         if freq > 3 and word not in [c.lower() for c in concepts]:
-            # Check if it's a meaningful concept
             if any(pattern in text.lower() for pattern in [
                 f'{word} это',
                 f'{word} является',
@@ -616,7 +576,6 @@ def extract_key_concepts(text: str) -> List[str]:
             ]):
                 concepts.append(word.capitalize())
     
-    # Remove duplicates while preserving order
     seen = set()
     unique_concepts = []
     for concept in concepts:
@@ -627,10 +586,10 @@ def extract_key_concepts(text: str) -> List[str]:
     return unique_concepts[:15]
 
 def determine_complexity(text: str) -> str:
-    """Determine text complexity level"""
+    """Определяем сложность текста"""
     words = word_tokenize(text.lower())
     
-    # Indicators of complexity
+    # Индикаторы сложности
     basic_words = ['основной', 'простой', 'базовый', 'элементарный', 'начальный']
     intermediate_words = ['применение', 'использование', 'алгоритм', 'метод', 'анализ']
     advanced_words = ['оптимизация', 'доказательство', 'теорема', 'сложность', 'производная']
@@ -639,14 +598,12 @@ def determine_complexity(text: str) -> str:
     intermediate_count = sum(1 for w in words if w in intermediate_words)
     advanced_count = sum(1 for w in words if w in advanced_words)
     
-    # Check for mathematical formulas
+    # Ищем формулы
     formula_count = len(re.findall(r'[∑∫∂∇∈∀∃]|\$[^$]+\$', text))
     
-    # Sentence complexity
     sentences = sent_tokenize(text)
     avg_sentence_length = np.mean([len(word_tokenize(s)) for s in sentences]) if sentences else 0
     
-    # Decision logic
     if advanced_count > 2 or formula_count > 5 or avg_sentence_length > 25:
         return "advanced"
     elif intermediate_count > 2 or formula_count > 2 or avg_sentence_length > 20:
@@ -655,13 +612,12 @@ def determine_complexity(text: str) -> str:
         return "basic"
 
 def generate_summary(text: str) -> str:
-    """Generate structured summary with GPT-4"""
+    """Суммаризация с GPT"""
     try:
         if not openai_client:
             load_models()
         
-        # Limit text for API
-        max_chars = 10000
+        max_chars = 15000
         if len(text) > max_chars:
             text = text[:max_chars] + "..."
         
@@ -719,13 +675,12 @@ def generate_summary(text: str) -> str:
         return "## 🎯 Главная идея\nНе удалось создать расширенное резюме из-за технической ошибки."
 
 def generate_flashcards(text: str) -> List[Dict]:
-    """Generate multi-level flashcards with GPT-4"""
+    """Генерируем флеш-карты с GPT"""
     try:
         if not openai_client:
             load_models()
         
-        # Limit text for API
-        max_chars = 10000
+        max_chars = 15000
         if len(text) > max_chars:
             text = text[:max_chars] + "..."
         
@@ -790,26 +745,21 @@ def generate_flashcards(text: str) -> List[Dict]:
         
         content = response.choices[0].message.content.strip()
         
-        # Extract JSON
+        # Извлечение JSON
         json_match = re.search(r'\[.*\]', content, re.DOTALL)
         if json_match:
             json_str = json_match.group(0)
         else:
             json_str = content
         
-        # Parse and validate
         flashcards = json.loads(json_str)
         
-        # Validate that cards are based on text content
         validated_cards = []
         for card in flashcards:
-            # Ensure required fields
             if 'q' in card and 'a' in card:
-                # Add text_reference if not present
                 if 'text_reference' not in card:
                     card['text_reference'] = "См. текст выше"
                 
-                # Add spaced repetition data
                 card['next_review'] = calculate_next_review(card.get('difficulty', 2))
                 card['ease_factor'] = 2.5
                 
@@ -822,11 +772,10 @@ def generate_flashcards(text: str) -> List[Dict]:
         return generate_fallback_flashcards(text)
 
 def generate_fallback_flashcards(text: str) -> List[Dict]:
-    """Generate flashcards using rule-based approach when GPT fails"""
+    """Генерация флеш-карт без GPT"""
     flashcards = []
     
     try:
-        # Extract definitions from text
         definition_patterns = [
             r'([А-Я][а-я]+(?:\s+[а-я]+){0,3})\s+(?:—|–|-|это|является)\s*([^.]+)\.',
             r'([А-Я][а-я]+(?:\s+[а-я]+){0,3})\s+называется\s+([^.]+)\.',
@@ -835,7 +784,7 @@ def generate_fallback_flashcards(text: str) -> List[Dict]:
         
         for pattern in definition_patterns:
             matches = re.findall(pattern, text, re.MULTILINE)
-            for term, definition in matches[:3]:  # Limit definitions
+            for term, definition in matches[:3]:
                 if len(term) > 3 and len(definition) > 10:
                     flashcards.append({
                         "type": "definition",
@@ -851,7 +800,6 @@ def generate_fallback_flashcards(text: str) -> List[Dict]:
                         "ease_factor": 2.5
                     })
         
-        # Extract formulas
         formula_matches = re.findall(r'([A-Za-z]+\([^)]+\))\s*=\s*([^.]+)', text)
         for formula_name, formula_body in formula_matches[:2]:
             flashcards.append({
@@ -868,7 +816,6 @@ def generate_fallback_flashcards(text: str) -> List[Dict]:
                 "ease_factor": 2.5
             })
         
-        # Extract examples
         example_sentences = re.findall(r'(?:Например|К примеру|Пример)[,:]?\s*([^.]+)\.', text, re.IGNORECASE)
         for i, example in enumerate(example_sentences[:2]):
             flashcards.append({
@@ -885,7 +832,6 @@ def generate_fallback_flashcards(text: str) -> List[Dict]:
                 "ease_factor": 2.5
             })
         
-        # Extract key statements
         key_statements = re.findall(r'(?:Важно|Следует|Необходимо|Нужно)\s+([^.]+)\.', text, re.IGNORECASE)
         for statement in key_statements[:2]:
             flashcards.append({
@@ -902,7 +848,6 @@ def generate_fallback_flashcards(text: str) -> List[Dict]:
                 "ease_factor": 2.5
             })
         
-        # If not enough cards, add general ones
         if len(flashcards) < 5:
             sentences = sent_tokenize(text)
             informative_sentences = [s for s in sentences if len(s) > 50 and not s.endswith('?')]
@@ -926,7 +871,6 @@ def generate_fallback_flashcards(text: str) -> List[Dict]:
         
     except Exception as e:
         logger.error(f"Error in fallback flashcard generation: {str(e)}")
-        # Return at least one card
         return [{
             "type": "definition",
             "q": "О чем этот текст?",
@@ -942,26 +886,24 @@ def generate_fallback_flashcards(text: str) -> List[Dict]:
         }]
 
 def calculate_next_review(difficulty: int) -> str:
-    """Calculate next review date based on difficulty"""
+    """Считаем день следующей проверки"""
     days_map = {1: 1, 2: 3, 3: 7}
     days = days_map.get(difficulty, 3)
     next_date = datetime.now() + timedelta(days=days)
     return next_date.strftime("%Y-%m-%d")
 
 def generate_mind_map(text: str, topics: List[Dict]) -> Dict:
-    """Generate mind map structure"""
+    """Генерация Mind Map"""
     try:
-        # Use actual topic titles
         if topics and 'title' in topics[0]:
             central_topic = topics[0]['title']
         else:
             central_topic = "Основная тема"
         
-        # Create branches from main topics
         branches = []
         colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FECA57", "#48DBFB"]
         
-        for i, topic in enumerate(topics[:6]):  # Max 6 main branches
+        for i, topic in enumerate(topics[:6]):
             branch = {
                 "name": topic['title'][:40],
                 "importance": 0.9 - (i * 0.1),
@@ -969,7 +911,6 @@ def generate_mind_map(text: str, topics: List[Dict]) -> Dict:
                 "children": []
             }
             
-            # Add subtopics as children
             for subtopic in topic.get('subtopics', [])[:3]:
                 branch['children'].append({
                     "name": subtopic[:30],
@@ -977,7 +918,6 @@ def generate_mind_map(text: str, topics: List[Dict]) -> Dict:
                     "color": branch['color']
                 })
             
-            # Add key concepts as additional children if no subtopics
             if not branch['children'] and topic.get('key_concepts'):
                 for concept in topic['key_concepts'][:3]:
                     branch['children'].append({
@@ -1001,34 +941,28 @@ def generate_mind_map(text: str, topics: List[Dict]) -> Dict:
         }
 
 def generate_study_plan(topics: List[Dict], flashcards: List[Dict], estimated_hours: int = 10) -> Dict:
-    """Generate personalized study plan with meaningful topics"""
+    """Генерируем персонализированный план обучения"""
     try:
-        # Calculate sessions based on content
         total_cards = len(flashcards)
         total_topics = len(topics)
         
-        # Estimate time per session
         minutes_per_session = 45
         total_sessions = max(3, min(10, estimated_hours * 60 // minutes_per_session))
         
         sessions = []
         
-        # Group topics by complexity
         basic_topics = [t for t in topics if t.get('complexity') == 'basic']
         intermediate_topics = [t for t in topics if t.get('complexity') == 'intermediate']
         advanced_topics = [t for t in topics if t.get('complexity') == 'advanced']
         
-        # Distribute topics across sessions logically
         topic_distribution = []
         
-        # First third: basic topics
         for i in range(total_sessions // 3):
             if basic_topics:
                 topic_distribution.append(basic_topics.pop(0))
             elif intermediate_topics:
                 topic_distribution.append(intermediate_topics.pop(0))
         
-        # Second third: intermediate topics
         for i in range(total_sessions // 3, 2 * total_sessions // 3):
             if intermediate_topics:
                 topic_distribution.append(intermediate_topics.pop(0))
@@ -1037,18 +971,15 @@ def generate_study_plan(topics: List[Dict], flashcards: List[Dict], estimated_ho
             elif advanced_topics:
                 topic_distribution.append(advanced_topics.pop(0))
         
-        # Last third: advanced topics and review
         for i in range(2 * total_sessions // 3, total_sessions):
             if advanced_topics:
                 topic_distribution.append(advanced_topics.pop(0))
             elif intermediate_topics:
                 topic_distribution.append(intermediate_topics.pop(0))
             else:
-                # Review previous topics
                 if i - 3 >= 0 and i - 3 < len(topic_distribution):
                     topic_distribution.append(topic_distribution[i - 3])
         
-        # Create sessions
         cards_per_session = max(3, total_cards // total_sessions)
         card_idx = 0
         
@@ -1056,19 +987,16 @@ def generate_study_plan(topics: List[Dict], flashcards: List[Dict], estimated_ho
             session_topics = []
             session_cards = []
             
-            # Add topic for this session
             if day - 1 < len(topic_distribution):
                 topic = topic_distribution[day - 1]
                 session_topics.append(topic['title'])
             
-            # Add flashcards
             session_card_count = min(cards_per_session, total_cards - card_idx)
             for _ in range(session_card_count):
                 if card_idx < total_cards:
                     session_cards.append(card_idx)
                     card_idx += 1
             
-            # Determine focus based on day
             if day <= total_sessions // 3:
                 focus = "Понимание базовых концепций"
             elif day <= 2 * total_sessions // 3:
@@ -1076,7 +1004,6 @@ def generate_study_plan(topics: List[Dict], flashcards: List[Dict], estimated_ho
             else:
                 focus = "Закрепление и проверка понимания"
             
-            # Create meaningful exercises
             exercises = []
             if session_topics:
                 topic_name = session_topics[0]
@@ -1095,7 +1022,6 @@ def generate_study_plan(topics: List[Dict], flashcards: List[Dict], estimated_ho
                 "exercises": exercises[:3]
             })
         
-        # Create meaningful milestones based on actual topics
         milestones = []
         if topics:
             milestones.extend([
@@ -1105,8 +1031,7 @@ def generate_study_plan(topics: List[Dict], flashcards: List[Dict], estimated_ho
                 f"Успешно ответить на 80% флеш-карт уровня сложности 2 и выше"
             ])
         
-        # Spaced repetition schedule
-        review_schedule = [1, 3, 7, 14, 30]  # Days for review
+        review_schedule = [1, 3, 7, 14, 30]
         
         return {
             "sessions": sessions,
@@ -1127,38 +1052,37 @@ def generate_study_plan(topics: List[Dict], flashcards: List[Dict], estimated_ho
         }
 
 def assess_content_quality(text: str, topics: List[Dict], summary: str, flashcards: List[Dict]) -> Dict:
-    """Assess the quality of generated content"""
+    """Оцениваем качество создаваемого материала"""
     try:
-        # Depth score - based on topic hierarchy and quality
+        # Оценка глубины - на основе иерархии тем и качества
         depth_score = 0.0
         
-        # Check if topics have meaningful titles (not just text snippets)
+        # Провяем, есть ли у тем осмысленные названия (а не просто фрагменты текста)
         meaningful_titles = sum(1 for t in topics if len(t.get('title', '')) < 100 and not t['title'].endswith('...'))
         depth_score += min(0.5, meaningful_titles / len(topics) * 0.5) if topics else 0
         
-        # Check for subtopics and examples
+        # Проверяем наличие подтем и примеров
         topics_with_subtopics = sum(1 for t in topics if len(t.get('subtopics', [])) > 0)
         topics_with_examples = sum(1 for t in topics if len(t.get('examples', [])) > 0)
         depth_score += min(0.25, topics_with_subtopics / len(topics) * 0.25) if topics else 0
         depth_score += min(0.25, topics_with_examples / len(topics) * 0.25) if topics else 0
         
-        # Coverage score - based on key concepts extracted
+        # Оценка охвата - основана на извлеченных ключевых понятиях
         total_concepts = sum(len(t.get('key_concepts', [])) for t in topics)
         coverage_score = min(1.0, total_concepts / 30)
         
-        # Practical score - based on examples and applications
+        # Оценка практичности - на основе примеров и приложений
         total_examples = sum(len(t.get('examples', [])) for t in topics)
         practical_flashcards = sum(1 for f in flashcards if f.get('type') in ['application', 'problem'])
         practical_score = min(1.0, (total_examples / 10 * 0.5) + (practical_flashcards / 5 * 0.5))
         
-        # Clarity score - based on summary structure and flashcard quality
+        # Оценка ясности - на основе структуры резюме и качества карточек
         clarity_score = 0.5  # Base score
         if len(summary) > 100 and '##' in summary:
             clarity_score += 0.3
         if flashcards and all('hint' in f and 'memory_hook' in f for f in flashcards[:5]):
             clarity_score += 0.2
         
-        # Generate suggestions
         suggestions = []
         if depth_score < 0.7:
             suggestions.append("Улучшить извлечение тем - сейчас используются фрагменты текста вместо осмысленных названий")
@@ -1190,11 +1114,11 @@ def assess_content_quality(text: str, topics: List[Dict], summary: str, flashcar
         }
 
 def process_file(filepath: str, filename: str) -> Dict[str, Any]:
-    """Advanced processing pipeline with improved topic extraction"""
+    """Обработка файла"""
     try:
-        logger.info(f"Starting advanced processing for: {filename}")
+        logger.info(f"Starting processing for: {filename}")
         
-        # Extract text based on file type
+        # Извлекаем текст в зависимости от типа файла
         file_ext = Path(filename).suffix.lower()
         
         if file_ext == '.pdf':
@@ -1211,7 +1135,6 @@ def process_file(filepath: str, filename: str) -> Dict[str, Any]:
         
         logger.info(f"Extracted {len(text)} characters of text")
         
-        # Try to use GPT for better topic extraction
         try:
             topics_data = extract_topics_with_gpt(text)
             logger.info("Successfully extracted topics with GPT")
@@ -1219,14 +1142,13 @@ def process_file(filepath: str, filename: str) -> Dict[str, Any]:
             logger.warning(f"Failed to extract topics with GPT: {str(e)}, falling back to local method")
             topics_data = extract_topics_fallback(text)
         
-        # Generate other components
         summary = generate_summary(text)
         flashcards = generate_flashcards(text)
         mind_map = generate_mind_map(text, topics_data.get('main_topics', []))
         study_plan = generate_study_plan(topics_data.get('main_topics', []), flashcards)
         quality = assess_content_quality(text, topics_data.get('main_topics', []), summary, flashcards)
         
-        # Compile results
+        # Собираем результат
         result = {
             "topics_data": topics_data,
             "summary": summary,
@@ -1242,7 +1164,6 @@ def process_file(filepath: str, filename: str) -> Dict[str, Any]:
             }
         }
         
-        # Add video-specific data if available
         if video_data:
             result["video_segments"] = video_data.get('segments', [])
             result["key_moments"] = video_data.get('key_moments', [])
@@ -1255,9 +1176,8 @@ def process_file(filepath: str, filename: str) -> Dict[str, Any]:
         logger.error(f"Error in advanced processing: {str(e)}")
         raise
 
-# Test function
+# Для теста
 if __name__ == "__main__":
-    # Test with sample text
     sample_text = """
     Линейные модели классификации
 

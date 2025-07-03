@@ -1,13 +1,9 @@
-#!/bin/bash
-
 echo "=== AI Study MVP Setup ==="
 echo ""
 
 # Check Python version
 python_version=$(python3 --version 2>&1 | awk '{print $2}')
 echo "✓ Python version: $python_version"
-
-# Create directory structure
 
 # Create .gitignore
 echo "Creating .gitignore..."
