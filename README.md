@@ -66,12 +66,6 @@ FLASK_ENV=production
 SECRET_KEY=your-secret-key-here
 ```
 
-### Volumes
-- `./uploads:/app/uploads` - загруженные файлы
-- `./data:/app/data` - база данных SQLite
-- `whisper_cache` - кэш моделей Whisper
-- `huggingface_cache` - кэш моделей HuggingFace
-
 ## 🛠️ Управление
 
 ### Основные команды
